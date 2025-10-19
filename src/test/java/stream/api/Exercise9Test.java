@@ -9,16 +9,7 @@ import common.test.tool.util.CollectorImpl;
 
 import org.junit.Test;
 
-import java.util.Arrays;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.EnumSet;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
-import java.util.StringJoiner;
+import java.util.*;
 import java.util.function.BiConsumer;
 import java.util.function.BinaryOperator;
 import java.util.function.Function;
@@ -41,8 +32,14 @@ public class Exercise9Test extends ClassicOnlineStore {
          * Implement a {@link Collector} which can create a String with comma separated names shown in the assertion.
          * The collector will be used by serial stream.
          */
-        Supplier<Object> supplier = () -> new StringJoiner(",");
-        Collector<String, ?, String> toCsv = null;
+        Supplier<StringJoiner> supplier = () -> new StringJoiner(",");
+        BiConsumer<StringJoiner, String> accumulator = StringJoiner::add;
+        BinaryOperator<StringJoiner> combiner = StringJoiner::merge;
+        Function<StringJoiner, String> finisher = StringJoiner::toString;
+
+        Collector<String, ?, String> toCsv =
+                new CollectorImpl<>(supplier, accumulator, combiner, finisher, Collections.emptySet());
+
         String nameAsCsv = customerList.stream().map(Customer::getName).collect(toCsv);
         assertThat(nameAsCsv, is("Joe,Steven,Patrick,Diana,Chris,Kathy,Alice,Andrew,Martin,Amy"));
     }
@@ -57,13 +54,27 @@ public class Exercise9Test extends ClassicOnlineStore {
          * values as {@link Set} of customers who are wanting to buy that item.
          * The collector will be used by parallel stream.
          */
+        Supplier<Map<String, Set<String>>> supplier = HashMap::new;
+        BiConsumer<Map<String, Set<String>>, Customer> accumulator = (map, customer) -> {
+            for (Item item : customer.getWantToBuy()) {
+                map.computeIfAbsent(item.getName(), k -> new HashSet<>()).add(customer.getName());
+            }
+        };
+        BinaryOperator<Map<String, Set<String>>> combiner = (map1, map2) -> {
+            map2.forEach((key, value) ->
+                    map1.merge(key, value, (set1, set2) -> {
+                        set1.addAll(set2);
+                        return set1;
+                    }));
+            return map1;
+        };
+        Function<Map<String, Set<String>>, Map<String, Set<String>>> finisher = Function.identity();
 
+        Collector<Customer, ?, Map<String, Set<String>>> toItemAsKey =
+                new CollectorImpl<>(supplier, accumulator, combiner, finisher, EnumSet.of(Collector.Characteristics.CONCURRENT));
 
-
-        Collector<Customer, ?, Map<String, Set<String>>> toItemAsKey = null;
         Map<String, Set<String>> itemMap =
                 customerList.stream().parallel().collect(toItemAsKey);
-
 
         assertThat(itemMap.get("plane"), containsInAnyOrder("Chris"));
         assertThat(itemMap.get("onion"), containsInAnyOrder("Patrick", "Amy"));
@@ -74,5 +85,4 @@ public class Exercise9Test extends ClassicOnlineStore {
         assertThat(itemMap.get("cable"), containsInAnyOrder("Diana", "Steven"));
         assertThat(itemMap.get("desk"), containsInAnyOrder("Alice"));
     }
-
 }
